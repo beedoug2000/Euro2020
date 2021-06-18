@@ -13,23 +13,48 @@ logger.addHandler(s_handler)
 
 ### Functions
 
-# Gets all the results from a sheet and stores them in a dictionary for later processing
-def get_sheet_results(sheet):
+# Gets all the group stage results from a sheet and stores them in a dictionary for later processing
+def get_group_results(sheet):
     result_col_sets = [(3,4,5), (7,8,9), (11,12,13)]
-    results = {}
+    group_results = {}
 
-    for row in range(21, 37):
+    for row_num in range(21, 37):
         for result_col_set in result_col_sets:
-            teamA = sheet.cell(row=row, column=result_col_set[0]).value
-            teamB = sheet.cell(row=row, column=result_col_set[1]).value
-            result = sheet.cell(row=row, column=result_col_set[2]).value
+            teamA = sheet.cell(row=row_num, column=result_col_set[0]).value
+            teamB = sheet.cell(row=row_num, column=result_col_set[1]).value
+            result = sheet.cell(row=row_num, column=result_col_set[2]).value
 
             # Only add this to the results if that result is recorded in the Matches sheet
             # This is cheating - should really check if all 3 values are present but will assume that the team names will always be populated
             if result:
-                results[teamA.strip()+'-'+teamB.strip()] = result.strip()
+                group_results[teamA.strip()+'-'+teamB.strip()] = result.strip()
 
-    return results
+    return group_results
+
+# Gets all the results for a particular knock-out stage from a sheet and stores them in a dictionary for later processing
+def get_knockout_stage_results(sheet, start_row, interval, num_times, result_col_set):
+    knockout_stage_results = {}
+    
+    for i in range(0, num_times):
+        row_num = start_row + (i * interval)
+        teamA = sheet.cell(row=row_num, column=result_col_set[0]).value
+        result = sheet.cell(row=row_num, column=result_col_set[1]).value
+        row_num += 1
+        teamB = sheet.cell(row=row_num, column=result_col_set[0]).value
+        
+        if result:
+            knockout_stage_results[teamA.strip()+'-'+teamB.strip()] = result.strip()
+    
+    return knockout_stage_results
+
+# Gets all the knock-out results from a sheet and stores them in one dictionary for later processing
+def get_knockout_results(sheet):
+    knockout_results = get_knockout_stage_results(sheet, 43, 3, 8, (3,4))
+    knockout_results.update(get_knockout_stage_results(sheet, 44, 6, 4, (7,8)))
+    knockout_results.update(get_knockout_stage_results(sheet, 47, 12, 2, (11,12)))
+    knockout_results.update(get_knockout_stage_results(sheet, 52, 0, 1, (15,16)))
+
+    return knockout_results
 
 # Compares a predicted result with an actual result and returns the number of points earned
 def compare_results(predicted_result, actual_result):        
@@ -85,17 +110,102 @@ try:
 except FileNotFoundError:
     raise SystemExit("No such file or directory: '{}'".format(filename))
 
-### Get all the available match results
+### Get all the available group match results
 matches_sheet = file['Matches']
-results = get_sheet_results(matches_sheet)
+results = get_group_results(matches_sheet)
 
 logger.debug("")
-logger.debug("LATEST RESULTS:")
+logger.debug("LATEST GROUP STAGE RESULTS:")
 logger.debug(results)
 logger.debug("")
 
 if len(results.keys()) == 0:
     sys.exit("No match results have been recorded, nothing to process.")
+    
+### Calculate the points of each team
+logger.info("Calculating current points total of each team")
+logger.debug("")
+team_points = {}
+for result in results.keys():
+    teams = result.split('-')
+    team_A = teams[0].strip()
+    team_B = teams[1].strip()
+    
+    score = results[result].split('-')
+    team_A_score = int(score[0].strip())
+    team_B_score = int(score[1].strip())
+
+    if team_B_score < team_A_score:
+        logger.debug("{} beat {} {}, adding 3 points to their total.".format(team_A, team_B, results[result]))
+        team_points[team_A] = team_points.get(team_A, 0)+3
+        team_points[team_B] = team_points.get(team_B, 0)
+    elif team_A_score < team_B_score:
+        logger.debug("{} beat {} {}, adding 3 points to their total.".format(team_B, team_A, results[result][::-1]))
+        team_points[team_B] = team_points.get(team_B, 0)+3
+        team_points[team_A] = team_points.get(team_A, 0)
+    else:
+        logger.debug("{} and {} drew {}, adding 1 point to each of their totals.".format(team_A, team_B, results[result]))
+        team_points[team_A] = team_points.get(team_A, 0)+1
+        team_points[team_B] = team_points.get(team_B, 0)+1
+
+logger.debug("")
+logger.debug("TEAM POINTS:")
+logger.debug(team_points)
+logger.debug("")
+        
+### Get each group of teams so results can be sorted properly
+logger.debug("Reading team groups from file")
+groups = {}
+matches_row_sets = [(5,6,7,8), (11,12,13,14)]
+
+for col in range(3, 12, 4):
+    for matches_row_set in matches_row_sets:
+        group_name = matches_sheet.cell(row=matches_row_set[0]-1, column=col).value
+        group = {}
+        for matches_row in matches_row_set:
+            team = matches_sheet.cell(row=matches_row, column=col).value
+            group[team] = 0
+        groups[group_name] = group
+
+logger.debug("")
+logger.debug("GROUPS:")
+logger.debug(groups)
+logger.debug("")
+
+### Update each teams' points total and sort accordingly
+logger.debug("Updating points and sorting team standings by group")
+for group_name, group in groups.items():
+    for team in group.keys():
+        group[team] = team_points.get(team, 0)
+    
+    sorted_group = dict(sorted(group.items(), key=lambda item: item[1], reverse=True))
+    groups[group_name] = sorted_group
+
+logger.debug("")
+logger.debug("GROUPS:")
+logger.debug(groups)
+logger.debug("")
+
+### Write the group standings to the Matches sheet
+logger.info("Updating Matches with team standings")
+update_groups(matches_sheet, range(3, 12, 4), matches_row_sets, groups)
+file.save(filename=filename)
+
+### Write the group standings to the Leaderboard sheet
+logger.info("Updating Leaderboard with team standings")
+leader_sheet = file['Leaderboard']
+leader_row_sets = [(3,4,5,6), (9,10,11,12)]
+update_groups(leader_sheet, range(5, 12, 3), leader_row_sets, groups)
+file.save(filename=filename)
+
+### Read in the knock-out results and add to the results dictionary
+# This is done after calculating the group stage points so that these results do not affect those totals
+results.update(get_knockout_results(matches_sheet))
+
+logger.debug("")
+logger.debug("LATEST RESULTS INCLUDING KNOCK-OUT STAGES:")
+logger.debug(results)
+logger.debug("")
 
 ### Get all the player predictions
 logger.info("Loading all player predictions")
@@ -106,7 +216,9 @@ for sheetname in sheetnames:
         logger.debug("'{}' not a player sheet - continuing.".format(sheetname))
         continue
 
-    predictions = get_sheet_results(file[sheetname])
+    predictions = get_group_results(file[sheetname])
+    predictions.update(get_knockout_results(file[sheetname]))
+    
     if len(predictions.keys()) != 0:
         player_predictions[sheetname] = predictions
 
@@ -152,97 +264,19 @@ for player in player_predictions.keys():
 logger.info("Updating Leaderboard with player standings")
 sorted_player_points = dict(sorted(player_points.items(), key=lambda item: item[1], reverse=True)) 
 
-leader_sheet = file['Leaderboard']
-
-row_num = 3
+row_number = 3
 for player in sorted_player_points.keys():
     s = 's' if sorted_player_points[player] > 1 else ''
     logger.info("Adding player {} with {} point{} to Leaderboard".format(player, sorted_player_points[player], s))
-    leader_sheet.cell(row=row_num, column=2).value = player
-    leader_sheet.cell(row=row_num, column=3).value = sorted_player_points[player]
-    row_num += 1
+    leader_sheet.cell(row=row_number, column=2).value = player
+    leader_sheet.cell(row=row_number, column=3).value = sorted_player_points[player]
+    row_number += 1
 
 # In theory, there should always be the same number of players playing
 # But just in case someone dropped out, clear all cells beyond the latest leaderboard
-while(leader_sheet.cell(row=row_num, column=2).value or leader_sheet.cell(row=row_num, column=3).value):
-    leader_sheet.cell(row=row_num, column=2).value = None
-    leader_sheet.cell(row=row_num, column=3).value = None
-    row_num += 1
+while(leader_sheet.cell(row=row_number, column=2).value or leader_sheet.cell(row=row_number, column=3).value):
+    leader_sheet.cell(row=row_number, column=2).value = None
+    leader_sheet.cell(row=row_number, column=3).value = None
+    row_number += 1
 
-file.save(filename=filename)
-
-### Calculate the points of each team
-logger.debug("")
-logger.info("Calculating current points total of each team")
-logger.debug("")
-team_points = {}
-for result in results.keys():
-    teams = result.split('-')
-    team_A = teams[0].strip()
-    team_B = teams[1].strip()
-    
-    score = results[result].split('-')
-    team_A_score = int(score[0].strip())
-    team_B_score = int(score[1].strip())
-
-    if team_B_score < team_A_score:
-        logger.debug("{} beat {} {}, adding 3 points to their total.".format(team_A, team_B, results[result]))
-        team_points[team_A] = team_points.get(team_A, 0)+3
-        team_points[team_B] = team_points.get(team_B, 0)
-    elif team_A_score < team_B_score:
-        logger.debug("{} beat {} {}, adding 3 points to their total.".format(team_B, team_A, results[result][::-1]))
-        team_points[team_B] = team_points.get(team_B, 0)+3
-        team_points[team_A] = team_points.get(team_A, 0)
-    else:
-        logger.debug("{} and {} drew {}, adding 1 point to each of their totals.".format(team_A, team_B, results[result]))
-        team_points[team_A] = team_points.get(team_A, 0)+1
-        team_points[team_B] = team_points.get(team_B, 0)+1
-
-logger.debug("")
-logger.debug("TEAM POINTS:")
-logger.debug(team_points)
-logger.debug("")
-        
-### Get each group of teams so results can be sorted properly
-logger.debug("Reading team groups from file")
-groups = {}
-matches_row_sets = [(5,6,7,8), (11,12,13,14)]
-
-for col in range(3, 12, 4):
-    for matches_row_set in matches_row_sets:
-        group_name = matches_sheet.cell(row=matches_row_set[0]-1, column=col).value
-        group = {}
-        for row in matches_row_set:
-            team = matches_sheet.cell(row=row, column=col).value
-            group[team] = 0
-        groups[group_name] = group
-
-logger.debug("")
-logger.debug("GROUPS:")
-logger.debug(groups)
-logger.debug("")
-
-### Update each teams' points total and sort accordingly
-logger.debug("Updating points and sorting team standings by group")
-for group_name, group in groups.items():
-    for team in group.keys():
-        group[team] = team_points.get(team, 0)
-    
-    sorted_group = dict(sorted(group.items(), key=lambda item: item[1], reverse=True))
-    groups[group_name] = sorted_group
-
-logger.debug("")
-logger.debug("GROUPS:")
-logger.debug(groups)
-logger.debug("")
-
-### Write the results to the Matches sheet
-logger.info("Updating Matches with team standings")
-update_groups(matches_sheet, range(3, 12, 4), matches_row_sets, groups)
-file.save(filename=filename)
-
-### Write the results to the Leaderboard sheet
-logger.info("Updating Leaderboard with team standings")
-leader_row_sets = [(3,4,5,6), (9,10,11,12)]
-update_groups(leader_sheet, range(5, 12, 3), leader_row_sets, groups)
 file.save(filename=filename)
