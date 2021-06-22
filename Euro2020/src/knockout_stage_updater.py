@@ -14,17 +14,18 @@ logger.addHandler(s_handler)
 logger.info("Starting the update")
 
 ### Get the filename from the command line and open the file for processing
-parser = argparse.ArgumentParser(description='Update knock-out stage bracket with team names.', usage='knockout_stage_updater.py <file_name> <name_to_replace> <team_name>')
+parser = argparse.ArgumentParser(description='Update knock-out stage bracket with team names.', usage='knockout_stage_updater.py <file_name> <list_of_replacements>')
 parser.add_argument('file_name', help='The name of the file to process')
-parser.add_argument('name_to_replace', help='The placeholder name in the knock-out bracket')
-parser.add_argument('team_name', help='The name of the team to put in the knock-out bracket')
+parser.add_argument('list_of_replacements', help='A string representing a list of names to replace in the knock-out bracket in the format (<name_to_replace>, <replacement_name>, ...)')
 args = parser.parse_args()
 
 filename = args.file_name
-name_to_replace = args.name_to_replace
-team_name = args.team_name
+list_of_replacements = args.list_of_replacements.split(",")
 logger.info("Updating file {}".format(filename))
-logger.info("Replacing {} with {}".format(name_to_replace, team_name))
+
+replacement_names = {}
+for i in range(0, len(list_of_replacements), 2):
+    replacement_names[list_of_replacements[i].strip()] = list_of_replacements[i+1].strip()
 
 file = None
 
@@ -39,11 +40,11 @@ for sheetname in sheetnames:
         logger.debug("'{}' not a knock-out stage sheet - continuing.".format(sheetname))
         continue
     
-    logger.info("    Updating {}".format(sheetname))
+    logger.info("Updating {}".format(sheetname))
     for col in file[sheetname].iter_cols(min_row=43, max_row=65, min_col=3, max_col=15):
         for cell in col:
-            if cell.value == name_to_replace:
-                cell.value = team_name
-                break
+            if replacement_names.get(cell.value):
+                logger.info("    Replacing {} with {}".format(cell.value, replacement_names[cell.value]))
+                cell.value = replacement_names[cell.value]
             
 file.save(filename=filename)
