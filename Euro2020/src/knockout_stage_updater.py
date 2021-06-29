@@ -1,10 +1,12 @@
 import argparse
 from openpyxl import load_workbook
+from openpyxl.styles import PatternFill, Alignment
+from openpyxl.styles.colors import Color
 import logging
 
 ### Set up the logger
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 s_handler = logging.StreamHandler()
 s_formatter = logging.Formatter('%(message)s')
 s_handler.setFormatter(s_formatter)
@@ -34,6 +36,19 @@ try:
 except FileNotFoundError:
     raise SystemExit("No such file or directory: '{}'".format(filename))
 
+logger.debug("Reading team cells from file")
+matches_sheet = file['Matches']
+matches_row_sets = [(5,6,7,8), (11,12,13,14)]
+
+teams = {}
+
+for col in range(3, 12, 4):
+    for matches_row_set in matches_row_sets:
+        for matches_row in matches_row_set:
+            # team_cell = matches_sheet.cell(row=matches_row, column=col)
+            team_name = matches_sheet.cell(row=matches_row, column=col).value
+            teams[team_name] = [matches_row, col]
+
 sheetnames = file.sheetnames
 for sheetname in sheetnames:
     if sheetname in ('Leaderboard'):
@@ -45,6 +60,19 @@ for sheetname in sheetnames:
         for cell in col:
             if replacement_names.get(cell.value):
                 logger.info("    Replacing {} with {}".format(cell.value, replacement_names[cell.value]))
-                cell.value = replacement_names[cell.value]
+                
+                new_name = replacement_names[cell.value]
+                target_cell = matches_sheet.cell(row=teams[new_name][0], column=teams[new_name][1])
+                target_cell_colour = target_cell.fill.start_color
+                
+                cell.value = new_name
+                cell.alignment = Alignment(horizontal="center", vertical="bottom")
+                
+                if target_cell_colour.type == "theme":
+                    c = Color(theme=target_cell_colour.theme, tint=target_cell_colour.tint)
+                    cell.fill = PatternFill(start_color=c, fill_type = "solid")
+                else:
+                    cell.fill = PatternFill(start_color=target_cell_colour.rgb, fill_type = "solid")
+                
             
 file.save(filename=filename)
