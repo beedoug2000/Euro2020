@@ -18,7 +18,7 @@ def get_group_results(sheet):
     result_col_sets = [(3,4,5), (7,8,9), (11,12,13)]
     group_results = {}
 
-    for row_num in range(21, 40):
+    for row_num in range(21, 41):
         for result_col_set in result_col_sets:
             teamA = sheet.cell(row=row_num, column=result_col_set[0]).value
             teamB = sheet.cell(row=row_num, column=result_col_set[1]).value
