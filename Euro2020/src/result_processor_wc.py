@@ -52,7 +52,7 @@ def get_knockout_results(sheet):
     knockout_results = get_knockout_stage_results(sheet, 47, 3, 8, (3,4))
     knockout_results.update(get_knockout_stage_results(sheet, 48, 6, 4, (7,8)))
     knockout_results.update(get_knockout_stage_results(sheet, 51, 12, 2, (11,12)))
-    knockout_results.update(get_knockout_stage_results(sheet, 56, 0, 1, (15,16)))
+    knockout_results.update(get_knockout_stage_results(sheet, 54, 6, 2, (15,16)))
 
     return knockout_results
 
