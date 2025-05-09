@@ -26,7 +26,7 @@ def get_group_results(sheet):
 
             # Only add this to the results if that result is recorded in the Matches sheet
             # This is cheating - should really check if all 3 values are present but will assume that the team names will always be populated
-            if result:
+            if result and teamA and teamB:
                 group_results[teamA.strip()+'-'+teamB.strip()] = result.strip()
 
     return group_results
